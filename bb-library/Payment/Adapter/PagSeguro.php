@@ -116,7 +116,7 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
             'token' => $this->getParam('token')
         );
 
-        $result = $this->_makeRequest(self::API_URL . '?' . http_query_build($data), $str);
+        $result = $this->_makeRequest(self::API_URL . '?' . http_build_query($data), $str);
 
         if (isset($result->code)) {
             $this->url =self::PAYMENT_FLOW_URL . $result->code;
