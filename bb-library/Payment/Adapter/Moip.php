@@ -34,14 +34,6 @@ class Payment_Adapter_Moip extends Payment_AdapterAbstract
         if(!$this->getParam('key')) {
             throw new Payment_Exception('Payment gateway "MoIP" is not configured properly. Please update configuration parameter "MoIP Key" at "Configuration -> Payments".');
         }
-
-        if ($this->testMode) {
-            $this->_pay_flow_url = 'https://desenvolvedor.moip.com.br/sandbox/Instrucao.do?token=';
-            $this->_endpoint = 'https://desenvolvedor.moip.com.br/sandbox/ws/alpha/EnviarInstrucao/Unica';
-        } else {
-            $this->_pay_flow_url = 'https://www.moip.com.br/Instrucao.do?token=';
-            $this->_endpoint = 'https://www.moip.com.br/ws/alpha/EnviarInstrucao/Unica';
-        }
     }
 
     public static function getConfig()
@@ -143,6 +135,14 @@ class Payment_Adapter_Moip extends Payment_AdapterAbstract
         $payerEmail = $payer->appendChild($payerEmail);
 
         $str = $xml->saveXML();
+
+        if ($this->getTestMode()) {
+            $this->_pay_flow_url = 'https://desenvolvedor.moip.com.br/sandbox/Instrucao.do?token=';
+            $this->_endpoint = 'https://desenvolvedor.moip.com.br/sandbox/ws/alpha/EnviarInstrucao/Unica';
+        } else {
+            $this->_pay_flow_url = 'https://www.moip.com.br/Instrucao.do?token=';
+            $this->_endpoint = 'https://www.moip.com.br/ws/alpha/EnviarInstrucao/Unica';
+        }
 
         $response = $this->_makeRequest($this->_endpoint, $str);
 
