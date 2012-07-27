@@ -1,0 +1,13 @@
+{
+    "name": "MoIP Order Theme",
+    "version": "1.0.0",
+    "description": "Adjustments for BoxBilling work properly with MoIP Gateway",
+    "icon": "screenshot.jpg",
+    "author": "Erle Carrara",
+    "author_url": "http://www.analisandobits.com/",
+    "meta_title": "",
+    "meta_description": "",
+    "meta_keywords": "",
+
+    "extends": "boxbilling"
+}

@@ -9,8 +9,6 @@ class Payment_Adapter_Moip extends Payment_AdapterAbstract
 
     public function init()
     {
-        error_reporting(E_ALL);
-
         if (!function_exists('simplexml_load_string')) {
         	throw new Payment_Exception('SimpleXML extension not enabled');
         }
@@ -57,7 +55,16 @@ class Payment_Adapter_Moip extends Payment_AdapterAbstract
                  'key' => array('text', array(
                     'label' => 'MoIP Key',
                  )),
-
+                'directPayment' => array('text', array(
+                    'label' => 'Direct Payment',
+                    'description' => 'S\N'
+                )),
+                'directPaymentDays' => array('text', array(
+                    'label' => 'Direct Payment days to due',
+                )),
+                'directPaymentLogo' => array('text', array(
+                    'label' => 'Logo URL',
+                )),
             ),
         );
     }
@@ -94,6 +101,27 @@ class Payment_Adapter_Moip extends Payment_AdapterAbstract
 
         $reason = $xml->createElement('Razao', $invoice->getTitle());
         $reason = $instr->appendChild($reason);
+
+        if (strtolower($this->getParam('directPayment')) == 's') {
+            $direct = $xml->createElement('PagamentoDireto');
+            $direct = $instr->appendChild($direct);
+
+            $directType = $xml->createElement('Forma', 'BoletoBancario');
+            $directType = $direct->appendChild($directType);
+
+            $paymentOptions = $xml->createElement('Boleto');
+            $paymentOptions = $instr->appendChild($paymentOptions);
+
+            $paymentDays = $xml->createElement('DiasExpiracao', $this->getParam('directPaymentDays'));
+            $paymentDays->setAttribute('tipo', 'Corridos');
+            $paymentDays = $paymentOptions->appendChild($paymentDays);
+
+            $paymentLine1 = $xml->createElement('Instrucao1', 'Não receber após o vencimento');
+            $paymentLine1 = $paymentOptions->appendChild($paymentLine1);
+
+            $paymentLogo = $xml->createElement('URLLogo', $this->getParam('directPaymentLogo'));
+            $paymentLogo = $paymentOptions->appendChild($paymentLogo);
+        }
 
         $reference = $xml->createElement('IdProprio', $invoice->getNumber()  . '.' . $invoice->getId() . '.' . rand(0, 999));
         $reference = $instr->appendChild($reference);
@@ -133,6 +161,41 @@ class Payment_Adapter_Moip extends Payment_AdapterAbstract
 
         $payerEmail = $xml->createElement('Email', $buyer->getEmail());
         $payerEmail = $payer->appendChild($payerEmail);
+
+        $payerAddress = $xml->createElement('EnderecoCobranca');
+        $payerAddress = $payer->appendChild($payerAddress);
+
+        $address = array_map('trim', explode(',', $buyer->getAddress()));
+
+        $payerStreet = $xml->createElement('Logradouro', $address[0]);
+        $payerStreet = $payerAddress->appendChild($payerStreet);
+
+        $address = array_map('trim', explode(' ', $address[1], 2));
+
+        $payerNu = $xml->createElement('Numero', $address[0]);
+        $payerNu = $payerAddress->appendChild($payerNu);
+
+        $payerCity = $xml->createElement('Cidade', $buyer->getCity());
+        $payerCity = $payerAddress->appendChild($payerCity);
+
+        $payerUf = $xml->createElement('Estado', $buyer->getState());
+        $payerUf = $payerAddress->appendChild($payerUf);
+
+        $payerCountry = $xml->createElement('Pais', 'BRA');
+        $payerCountry = $payerAddress->appendChild($payerCountry);
+
+        $phone = preg_replace('/[^0-9]+/', '', $buyer->getPhone());
+        $phone = substr($phone, 2);
+        $phone = preg_replace("/([0-9]{2})([0-9]{4})([0-9]{4})/", "($1) $2-$3", $phone);
+
+        $payerPhone = $xml->createElement('TelefoneFixo', $phone);
+        $payerPhone = $payerAddress->appendChild($payerPhone);
+
+        $payerZipcode = $xml->createElement('CEP', $buyer->getZip());
+        $payerZipcode = $payerAddress->appendChild($payerZipcode);
+
+        $payerNeigh = $xml->createElement('Bairro', $address[1]);
+        $payerNeigh = $payerAddress->appendChild($payerNeigh);
 
         $str = $xml->saveXML();
 
