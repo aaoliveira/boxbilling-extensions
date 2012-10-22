@@ -13,7 +13,7 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
     public function init()
     {
         if (!function_exists('simplexml_load_string')) {
-        	throw new Payment_Exception('SimpleXML extension not enabled');
+            throw new Payment_Exception('SimpleXML extension not enabled');
         }
 
         if (!extension_loaded('curl')) {
@@ -38,11 +38,16 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
             'form'  => array(
                 'email' => array('text', array(
                         'label' => 'PagSeguro Email',
-                    ),
-                 ),
+                 )),
                  'token' => array('text', array(
                     'label' => 'Token',
-                 ))
+                 )),
+                 'perc_tax' => array('text', array(
+                    'label' => 'Taxa Percentual (somente números)'
+                 )),
+                 'fixe_tax' => array('text', array(
+                    'label' => 'Taxa fixa (somente números)'
+                 )),
             ),
         );
     }
@@ -81,32 +86,32 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         $items = $root->appendChild($items);
 
         foreach($invoice->getItems() as $i) {
-			$item = $xml->createElement('item');
+            $item = $xml->createElement('item');
 
-			$itemId = $xml->createElement('id', $i->getId());
-			$itemDescription = $xml->createElement('description', $i->getDescription());
-			$itemAmount = $xml->createElement('amount', $i->getPrice());
-			$itemQuantity = $xml->createElement('quantity', $i->getQuantity());
+            $itemId = $xml->createElement('id', $i->getId());
+            $itemDescription = $xml->createElement('description', $i->getDescription());
+            $itemAmount = $xml->createElement('amount', ($i->getPrice() * ($this->getParam('perc_tax')/100) + $this->getParam('fixe_tax')));
+            $itemQuantity = $xml->createElement('quantity', $i->getQuantity());
 
             $item->appendChild($itemId);
-			$item->appendChild($itemDescription);
-			$item->appendChild($itemAmount);
-			$item->appendChild($itemQuantity);
+            $item->appendChild($itemDescription);
+            $item->appendChild($itemAmount);
+            $item->appendChild($itemQuantity);
 
-			$items->appendChild($item);
-		}
+            $items->appendChild($item);
+        }
 
-		$sender = $xml->createElement('sender');
-		$sender = $root->appendChild($sender);
+        $sender = $xml->createElement('sender');
+        $sender = $root->appendChild($sender);
 
-		$senderName = $xml->createElement('name', $buyerFullName);
-		$senderName = $sender->appendChild($senderName);
+        $senderName = $xml->createElement('name', $buyerFullName);
+        $senderName = $sender->appendChild($senderName);
 
-		$senderEmail = $xml->createElement('email', $buyer->getEmail());
-		$senderEmail = $sender->appendChild($senderEmail);
+        $senderEmail = $xml->createElement('email', $buyer->getEmail());
+        $senderEmail = $sender->appendChild($senderEmail);
 
-		$reference = $xml->createElement('reference', $invoice->getNumber()  . '.' . $invoice->getId());
-		$reference = $root->appendChild($reference);
+        $reference = $xml->createElement('reference', $invoice->getNumber()  . '.' . $invoice->getId());
+        $reference = $root->appendChild($reference);
 
         $xml->formatOutput = true;
         $str = $xml->saveXML();
@@ -163,8 +168,8 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
 
         $tx = new Payment_Transaction();
         $tx->setId($xml->code);
-		$tx->setAmount($xml->grossAmount);
-		$tx->setCurrency($invoice->getCurrency());
+        $tx->setAmount($xml->grossAmount);
+        $tx->setCurrency($invoice->getCurrency());
         $tx->setType(Payment_Transaction::TXTYPE_PAYMENT);
 
         switch ($xml->status) {
@@ -184,29 +189,29 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
     private function _makeRequest($url, $data)
     {
         $headers = array(
-    		'Content-Type: application/xml; charset=UTF-8',
-    	);
+            'Content-Type: application/xml; charset=UTF-8',
+        );
 
-    	$ch = curl_init();
-    	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
-    	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    	curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    	curl_setopt($ch, CURLOPT_URL, $url);
-    	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    	curl_setopt($ch, CURLOPT_TIMEOUT, 60);
-    	curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
 
-    	if ($this->testMode) {
-    	    curl_setopt($ch, CURLOPT_VERBOSE, true);
-    	}
+        if ($this->testMode) {
+            curl_setopt($ch, CURLOPT_VERBOSE, true);
+        }
 
-		$result = curl_exec($ch);
+        $result = curl_exec($ch);
 
-		if (curl_errno($ch)) {
-			throw new Payment_Exception('cURL error: ' . curl_errno($ch) . ' - ' . curl_error($ch));
-		}
+        if (curl_errno($ch)) {
+            throw new Payment_Exception('cURL error: ' . curl_errno($ch) . ' - ' . curl_error($ch));
+        }
 
-  		return $this->_parseResponse($result);
+          return $this->_parseResponse($result);
     }
 
     private function _parseResponse($result)
@@ -218,7 +223,7 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         }
 
         if (isset($xml->error)) {
-        	throw new Payment_Exception($xml->error->code . ': ' . $xml->error->message);
+            throw new Payment_Exception($xml->error->code . ': ' . $xml->error->message);
         }
 
         return $xml;
