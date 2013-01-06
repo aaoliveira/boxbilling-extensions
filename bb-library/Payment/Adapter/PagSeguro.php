@@ -1,17 +1,24 @@
 <?php
+
 /**
  * Pagseguro Payment Gateway
  *
  * @author Erle Carrara
+ *
+ * Compatível com a versão 2.12 do BoxBilling
  */
-class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
+class Payment_Adapter_PagSeguro
 {
     const API_URL = 'https://ws.pagseguro.uol.com.br/v2/checkout';
     const PAYMENT_FLOW_URL = 'https://pagseguro.uol.com.br/v2/checkout/payment.html?code=';
     const NOTIFICATIONS_URL = 'https://ws.pagseguro.uol.com.br/v2/transactions/notifications/';
 
-    public function init()
+    protected $config = array();
+
+    public function __construct($config)
     {
+        $this->config = $config;
+
         if (!function_exists('simplexml_load_string')) {
             throw new Payment_Exception('SimpleXML extension not enabled');
         }
@@ -20,12 +27,12 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
             throw new Payment_Exception('cURL extension is not enabled');
         }
 
-        if(!$this->getParam('email')) {
-            throw new Payment_Exception('Payment gateway "PagSeguro" is not configured properly. Please update configuration parameter "PagSeguro Email" at "Configuration -> Payments".');
+        if(empty($this->config['email'])) {
+            throw new Exception('Payment gateway "PagSeguro" is not configured properly. Please update configuration parameter "PagSeguro Email" at "Configuration -> Payments".');
         }
 
-        if(!$this->getParam('token')) {
-            throw new Payment_Exception('Payment gateway "PagSeguro" is not configured properly. Please update configuration parameter "PagSeguro Token" at "Configuration -> Payments".');
+        if(empty($this->config['token'])) {
+            throw new Exception('Payment gateway "PagSeguro" is not configured properly. Please update configuration parameter "PagSeguro Token" at "Configuration -> Payments".');
         }
     }
 
@@ -34,7 +41,7 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         return array(
             'supports_one_time_payments'   =>  true,
             'supports_subscriptions'       =>  false,
-            'description'     =>  'PagSeguro Payment Gateway <a href="http://www.pagseguro.com.br">www.pagseguro.com.br</a>. <br /> Desenvolvido por <a href="http://www.ewchost.com" title="Hospedagem de Site">EWC Host</a>',
+            'description'     =>  'PagSeguro Payment Gateway <a href="http://www.pagseguro.com.br">www.pagseguro.com.br</a>. <br /> Desenvolvido por <a href="http://www.zapen.com.br" title="Zapen Desenvolvimento Web">Zapen Desenvolvimento Web</a>',
             'form'  => array(
                 'email' => array('text', array(
                         'label' => 'PagSeguro Email',
@@ -52,26 +59,15 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         );
     }
 
-    public function getType()
+    public function getHtml($api_admin, $invoice_id, $subscription)
     {
-        return Payment_AdapterAbstract::TYPE_FORM;
-    }
+        $invoice = $api_admin->invoice_get(array('id'=>$invoice_id));
+        $buyer = $invoice['buyer'];
 
-    public function getServiceUrl()
-    {
-        return $this->url;
-    }
-
-    public function singlePayment(Payment_Invoice $invoice)
-    {
-        $buyer = $invoice->getBuyer();
-
-        $buyerName = $buyer->getFirstName();
-        $buyerLastName = $buyer->getLastname();
-
-        $buyerFullName = $buyerName;
-        if (!empty($buyerLastName)) {
-            $buyerFullName .= ' ' . $buyerLastName;
+        if (!empty($buyer['last_name'])) {
+            $buyerFullName = $buyer['first_name'] . ' ' . $buyer['last_name'];
+        } else {
+            $buyerFullName = 'Sr(a). ' . $buyer['first_name']; 
         }
 
         $xml = new DOMDocument('1.0', 'UTF-8');
@@ -85,13 +81,13 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         $items = $xml->createElement('items');
         $items = $root->appendChild($items);
 
-        foreach($invoice->getItems() as $i) {
+        foreach($invoice['lines'] as $i) {
             $item = $xml->createElement('item');
 
-            $itemId = $xml->createElement('id', $i->getId());
-            $itemDescription = $xml->createElement('description', $i->getDescription());
-            $itemAmount = $xml->createElement('amount', ($i->getPrice() * ($this->getParam('perc_tax')/100) + $this->getParam('fixe_tax')));
-            $itemQuantity = $xml->createElement('quantity', $i->getQuantity());
+            $itemId = $xml->createElement('id', $i['id']);
+            $itemDescription = $xml->createElement('description', $i['title']);
+            $itemAmount = $xml->createElement('amount', ($i['price'] * (($this->config['perc_tax']+100)/100) + $this->config['fixe_tax']));
+            $itemQuantity = $xml->createElement('quantity', $i['quantity']);
 
             $item->appendChild($itemId);
             $item->appendChild($itemDescription);
@@ -107,54 +103,34 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         $senderName = $xml->createElement('name', $buyerFullName);
         $senderName = $sender->appendChild($senderName);
 
-        $senderEmail = $xml->createElement('email', $buyer->getEmail());
+        $senderEmail = $xml->createElement('email', $buyer['email']);
         $senderEmail = $sender->appendChild($senderEmail);
 
-        $reference = $xml->createElement('reference', $invoice->getNumber()  . '.' . $invoice->getId());
+        $reference = $xml->createElement('reference', $invoice['id']);
         $reference = $root->appendChild($reference);
 
-        $xml->formatOutput = true;
+        if ($this->config['test_mode']) {
+            $xml->formatOutput = true;
+        }
+
         $str = $xml->saveXML();
 
         $data = array(
-            'email' => $this->getParam('email'),
-            'token' => $this->getParam('token')
+            'email' => $this->config['email'],
+            'token' => $this->config['token']
         );
 
         $result = $this->_makeRequest(self::API_URL . '?' . http_build_query($data), $str);
 
         if (isset($result->code)) {
-            $this->url =self::PAYMENT_FLOW_URL . $result->code;
-            return true;
+            $url = self::PAYMENT_FLOW_URL . $result->code;
+            return $this->_redirectUser($url);
         } else {
-            throw new Payment_Exception('Connection to PagSeguro servers failed');
+            throw new Exception('Connection to PagSeguro servers failed');
         }
-
-        return false;
     }
 
-    public function recurrentPayment(Payment_Invoice $invoice)
-    {
-        // not implemented
-    }
-
-    public function isIpnValid($data, Payment_Invoice $invoice)
-    {
-        return true;
-    }
-
-    public function getInvoiceId($data)
-    {
-        $id = parent::getInvoiceId($data);
-        if(!is_null($id)) {
-            return $id;
-        }
-
-        $reference = explode('.', $data['post']['reference']);
-        return intval($reference[1]);
-    }
-
-    public function getTransaction($data, Payment_Invoice $invoice)
+    public function processTransaction($api_admin, $id, $data, $gateway_id)
     {
         $code = $data['post']['code'];
 
@@ -166,55 +142,66 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         $xml = $this->_makeRequest(self::NOTIFICATIONS_URL . $code,
                                    http_query_build($data));
 
-        $tx = new Payment_Transaction();
-        $tx->setId($xml->code);
-        $tx->setAmount($xml->grossAmount);
-        $tx->setCurrency($invoice->getCurrency());
-        $tx->setType(Payment_Transaction::TXTYPE_PAYMENT);
+        $invoice_id = $xml->reference;
+        $tx = $api_admin->invoice_transaction_get(array('id'=>$id));
+        $invoice = $api_admin->invoice_get(array('id'=>$invoice_id));
+
+        $d = array(
+            'id'        => $id, 
+            'error'     => '',
+            'error_code'=> '',
+            'status'    => 'pending',
+            'updated_at'=> date('c'),
+            'amount' => $xml->grossAmount,
+            'txn_id' => $xml->code,
+            'currency' => $invoice['currency']
+        );
 
         switch ($xml->status) {
             case 3:
             case 4:
-                $tx->setStatus(Payment_Transaction::STATUS_COMPLETE);
+                $d['txn_status']  = 'complete';
+                $d['status']      = 'complete';
                 break;
 
             default:
-                throw new Payment_Exception('Unknown PagSeguro Payment status :' . $xml->status);
+                throw new Exception('Unknown PagSeguro Payment status :' . $xml->status);
                 break;
         }
 
-        return $tx;
+        $api_admin->invoice_transaction_update($d);
     }
 
-    private function _makeRequest($url, $data)
+    protected function _makeRequest($url, $data)
     {
         $headers = array(
             'Content-Type: application/xml; charset=UTF-8',
         );
 
-        $ch = curl_init();
+        $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
 
-        if ($this->testMode) {
+        if ($this->config['test_mode']) {
             curl_setopt($ch, CURLOPT_VERBOSE, true);
         }
 
         $result = curl_exec($ch);
 
         if (curl_errno($ch)) {
-            throw new Payment_Exception('cURL error: ' . curl_errno($ch) . ' - ' . curl_error($ch));
+            throw new Exception('cURL error: ' . curl_errno($ch) . ' - ' . curl_error($ch));
         }
 
-          return $this->_parseResponse($result);
+        return $this->_parseResponse($result);
     }
 
-    private function _parseResponse($result)
+    protected function _parseResponse($result)
     {
         try {
             $xml = simplexml_load_string($result, 'SimpleXMLElement', LIBXML_NOCDATA);
@@ -223,9 +210,17 @@ class Payment_Adapter_PagSeguro extends Payment_AdapterAbstract
         }
 
         if (isset($xml->error)) {
-            throw new Payment_Exception($xml->error->code . ': ' . $xml->error->message);
+            throw new Exception($xml->error->code . ': ' . $xml->error->message);
         }
 
         return $xml;
+    }
+
+    protected function _redirectUser($url) {
+        $html  = '<h2><a href="'+$url+'">Clique aqui para continuar com o pagamento...</a></h2>';
+        $html .= '<script type="text/javascript">';
+        $html .= 'setTimeout(function() { window.location.href = "' . $url . '"; }, 3000);';
+        $html .= '</script>';
+        return $html;
     }
 }
